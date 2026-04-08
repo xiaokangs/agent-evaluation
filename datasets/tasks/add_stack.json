@@ -1,0 +1,8 @@
+{
+  "id": "add-stack",
+  "description": "Implement the `Stack` class in `solution.py`. It must support: `push(item)`, `pop()` (raises IndexError if empty), `peek()` (raises IndexError if empty), `is_empty()`, and `size()`. All methods currently raise NotImplementedError.",
+  "workspace": "datasets/fixtures/add-stack",
+  "validator": {"type": "tests_pass", "config": {"command": "python -m pytest test_solution.py -v", "timeout_seconds": 30}},
+  "timeout_seconds": 120,
+  "metadata": {"difficulty": "medium", "category": "feature-add", "language": "python"}
+}

@@ -1,0 +1,4 @@
+pydantic>=2.0
+typer>=0.12
+rich>=13.0
+pytest>=8.0

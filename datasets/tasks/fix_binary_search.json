@@ -1,0 +1,8 @@
+{
+  "id": "fix-binary-search",
+  "description": "The function `binary_search(arr, target)` in `solution.py` has an off-by-one error: `right` is initialized to `len(arr)` instead of `len(arr) - 1`, which causes an index out of bounds error when the target is not found. Fix the initialization of `right`.",
+  "workspace": "datasets/fixtures/fix-binary-search",
+  "validator": {"type": "tests_pass", "config": {"command": "python -m pytest test_solution.py -v", "timeout_seconds": 30}},
+  "timeout_seconds": 120,
+  "metadata": {"difficulty": "medium", "category": "bug-fix", "language": "python"}
+}

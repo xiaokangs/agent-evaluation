@@ -1,0 +1,8 @@
+{
+  "id": "fix-mutable-default",
+  "description": "The function `append_to(element, to=[])` in `solution.py` uses a mutable default argument. This causes all calls without an explicit list to share the same list across invocations. Fix the bug so each call without an explicit `to` argument gets a fresh empty list.",
+  "workspace": "datasets/fixtures/fix-mutable-default",
+  "validator": {"type": "tests_pass", "config": {"command": "python -m pytest test_solution.py -v", "timeout_seconds": 30}},
+  "timeout_seconds": 120,
+  "metadata": {"difficulty": "easy", "category": "bug-fix", "language": "python"}
+}

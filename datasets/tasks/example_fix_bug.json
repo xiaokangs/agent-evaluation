@@ -1,0 +1,19 @@
+{
+  "id": "fix-off-by-one",
+  "description": "The function `sum_range(a, b)` in `solution.py` is supposed to return the sum of all integers from a to b inclusive, but it has an off-by-one error. Fix the bug.",
+  "workspace": "datasets/fixtures/fix-off-by-one",
+  "validator": {
+    "type": "tests_pass",
+    "config": {
+      "command": "python -m pytest test_solution.py -v",
+      "timeout_seconds": 30
+    }
+  },
+  "setup_commands": [],
+  "timeout_seconds": 120,
+  "metadata": {
+    "difficulty": "easy",
+    "category": "bug-fix",
+    "language": "python"
+  }
+}

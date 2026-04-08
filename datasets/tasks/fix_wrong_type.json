@@ -1,0 +1,8 @@
+{
+  "id": "fix-wrong-type",
+  "description": "The function `celsius_to_fahrenheit(c)` in `solution.py` converts Celsius to Fahrenheit but incorrectly wraps the result in `str()`, returning a string instead of a float. Fix it to return a numeric value.",
+  "workspace": "datasets/fixtures/fix-wrong-type",
+  "validator": {"type": "tests_pass", "config": {"command": "python -m pytest test_solution.py -v", "timeout_seconds": 30}},
+  "timeout_seconds": 120,
+  "metadata": {"difficulty": "easy", "category": "bug-fix", "language": "python"}
+}

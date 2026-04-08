@@ -1,0 +1,8 @@
+{
+  "id": "add-word-count",
+  "description": "Implement the `word_count(text)` function in `solution.py`. It should return a dict mapping each word (lowercase, punctuation stripped) to its frequency. Words are separated by whitespace. An empty string returns an empty dict.",
+  "workspace": "datasets/fixtures/add-word-count",
+  "validator": {"type": "tests_pass", "config": {"command": "python -m pytest test_solution.py -v", "timeout_seconds": 30}},
+  "timeout_seconds": 120,
+  "metadata": {"difficulty": "easy", "category": "feature-add", "language": "python"}
+}

@@ -1,0 +1,8 @@
+{
+  "id": "add-fizzbuzz",
+  "description": "Implement the `fizzbuzz(n)` function in `solution.py`. It should return a list of strings from 1 to n inclusive where multiples of 3 are 'Fizz', multiples of 5 are 'Buzz', multiples of both are 'FizzBuzz', and all other numbers are their string representation.",
+  "workspace": "datasets/fixtures/add-fizzbuzz",
+  "validator": {"type": "tests_pass", "config": {"command": "python -m pytest test_solution.py -v", "timeout_seconds": 30}},
+  "timeout_seconds": 120,
+  "metadata": {"difficulty": "easy", "category": "feature-add", "language": "python"}
+}

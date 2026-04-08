@@ -1,0 +1,8 @@
+{
+  "id": "fix-fibonacci",
+  "description": "The function `fib(n)` in `solution.py` is supposed to return the nth Fibonacci number (0-indexed, so fib(0)=0, fib(1)=1, fib(2)=1, ...). It has a wrong base case: it returns 1 for n=0 instead of 0. Fix the bug.",
+  "workspace": "datasets/fixtures/fix-fibonacci",
+  "validator": {"type": "tests_pass", "config": {"command": "python -m pytest test_solution.py -v", "timeout_seconds": 30}},
+  "timeout_seconds": 120,
+  "metadata": {"difficulty": "easy", "category": "bug-fix", "language": "python"}
+}
