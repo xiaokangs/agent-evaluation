@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from core.schemas import Run, Task
-from core.workspace import cleanup_workspace, prepare_workspace
+from core.workspace import isolated_workspace
 from agents.base import AgentAdapter
 from evaluators.base import Evaluator
 
@@ -49,13 +49,9 @@ class RunManager:
         return results
 
     def _execute_one(self, task: Task, adapter: AgentAdapter, run_index: int) -> Run:
-        workspace = prepare_workspace(task)
-        try:
+        with isolated_workspace(task, keep=self.keep_workspaces) as workspace:
             run = adapter.run(task, str(workspace), run_index)
             run = self.evaluator.evaluate(run, task)
-        finally:
-            if not self.keep_workspaces:
-                cleanup_workspace(workspace)
         return run
 
     def _persist(self, run: Run) -> None:

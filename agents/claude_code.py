@@ -172,15 +172,25 @@ def _parse_stream_json(
                 ))
 
             # Extract metrics from the result event.
-            # Actual field names from stream-json:
-            #   duration_ms, num_turns, total_cost_usd
-            #   usage.input_tokens, usage.output_tokens
+            #
+            # result.usage only contains uncached tokens for the final request —
+            # it misses cache_read and cache_creation tokens from all turns.
+            #
+            # result.modelUsage is keyed by model name and aggregates the full
+            # session: inputTokens, outputTokens, cacheReadInputTokens,
+            # cacheCreationInputTokens. Use this for accurate totals.
             duration_ms = obj.get("duration_ms")
-            usage = obj.get("usage", {})
-            input_tokens = usage.get("input_tokens")
-            output_tokens = usage.get("output_tokens")
+
+            model_usage = obj.get("modelUsage", {})
+            # Sum across all models (almost always just one)
+            input_tokens = sum(v.get("inputTokens", 0) for v in model_usage.values()) or None
+            output_tokens = sum(v.get("outputTokens", 0) for v in model_usage.values()) or None
+            cache_read = sum(v.get("cacheReadInputTokens", 0) for v in model_usage.values())
+            cache_creation = sum(v.get("cacheCreationInputTokens", 0) for v in model_usage.values())
+
+            # Total = all tokens that entered context + generated tokens
             total_tokens = (
-                (input_tokens or 0) + (output_tokens or 0)
+                (input_tokens or 0) + (output_tokens or 0) + cache_read + cache_creation
             ) or None
             metrics = Metrics(
                 wall_clock_seconds=(duration_ms / 1000.0) if duration_ms is not None else
