@@ -20,7 +20,6 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from core.schemas import Task
 
@@ -128,15 +127,12 @@ def batch(
 
     started_at = datetime.now(timezone.utc)
     all_runs: list[Run] = []
-    total = len(tasks) * len(adapters) * runs
-    completed = 0
 
     for task_def in tasks:
         for adapter in adapters:
             console.print(f"[bold]{task_def.id}[/bold] / {adapter.agent_id} ({runs}x) ...", end="  ")
             agent_runs = manager.execute(task_def, adapter, run_count=runs)
             all_runs.extend(agent_runs)
-            completed += runs
             passed = sum(1 for r in agent_runs if r.validation and r.validation.passed)
             console.print(f"[green]{passed}/{runs} PASS[/green]" if passed == runs
                           else f"[yellow]{passed}/{runs} PASS[/yellow]")

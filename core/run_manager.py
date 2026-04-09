@@ -2,18 +2,16 @@
 Run manager: orchestrates task execution across agents and run counts.
 
 Flow per (task, agent, run_index):
-  1. prepare_workspace
-  2. adapter.run()
-  3. evaluator.evaluate()   ← must happen before cleanup
-  4. cleanup_workspace
+  1. isolated_workspace  — copy fixture into temp dir
+  2. adapter.run()       — agent executes inside the workspace
+  3. evaluator.evaluate() — validate outcome while workspace still exists
+  4. workspace cleanup   — guaranteed by context manager
   5. persist run result as JSON
 """
 
 from __future__ import annotations
 
 import json
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 from core.schemas import Run, Task
