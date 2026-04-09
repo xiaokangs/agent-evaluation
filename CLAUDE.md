@@ -12,15 +12,14 @@ The system should answer questions such as:
 
 - Did the agent complete the task successfully?
 - How long did it take?
-- How many turns did it require?
+- How many turns or execution steps did it require?
 - How many tokens and how much cost did it consume?
 - How stable was it across repeated runs?
-- How different were the traces and tool-use patterns across agents?
+- What failure modes occurred?
+- How did observability differ across agent architectures?
 
 This project is not a general-purpose autonomous agent framework.
-It is not a prompt playground.
-It is not a benchmark paper reproduction project.
-It is an evaluation system.
+It is an evaluation system for measuring agent reliability, efficiency, and trace behavior across implementations.
 
 The first product goal is to produce a credible and repeatable comparison report for multiple agents solving the same coding tasks.
 
@@ -40,37 +39,28 @@ The first product goal is to produce a credible and repeatable comparison report
 
 ## Initial Scope
 
-Phase 1 of this project focuses on:
+Phase 1 focuses on side-by-side comparison of coding agents.
 
-- side-by-side comparison of coding agents
-- task execution in isolated workspaces
-- collection of trace and runtime metadata
-- evaluation of outcome, efficiency, and stability
-- generation of per-task and aggregate reports
+Supported categories may include:
 
-The first supported agents may include:
+- productized coding agents (for example Claude Code, Codex-like runners)
+- custom orchestrated agents (for example LangGraph-based agents)
+- future MCP-compatible tool-wrapped agents
 
-- Claude Code
-- Codex or Codex-like execution path
-- other agent backends only if they can be instrumented with enough fidelity
-
-If different agents expose different internal details, the system should normalize what is observable instead of pretending all traces are equivalent.
+The system should compare not only task outcome, but also observability quality and failure behavior across architectures.
 
 ---
 
 ## Non-Goals
 
-Do not turn this into any of the following during P0:
+Do not turn this into any of the following during P0/P1:
 
 - a generic agent orchestration framework
 - a universal benchmark for every AI workload
-- a RAG evaluation platform
-- a browser automation evaluation platform
+- a full RAG evaluation platform
+- a browser automation platform
 - a SaaS product
-- a leaderboard website
-- a research paper engine
-- a full judge model platform
-- an autonomous self-improving agent system
+- a public leaderboard website
 
 Those may come later. Not now.
 
@@ -85,13 +75,14 @@ This system should be designed as:
 - agent-specific runner adapters
 - task-specific evaluators
 - a reporting layer
+- a historical results layer later
 
 The correct mental model is:
 
-Task -> Runner -> Agent Adapter -> Trace Collector -> Evaluator -> Report
+Task -> Runner -> Agent Adapter -> Trace Collector -> Evaluator -> Report -> Historical Store
 
 We are not trying to access each agent's true internal reasoning.
-We are collecting a normalized external execution trace that is sufficient for comparison.
+We are collecting normalized, observable execution traces that are sufficient for comparison.
 
 ---
 
@@ -143,7 +134,7 @@ Compute at minimum:
 
 - success / failure
 - wall clock duration
-- turn count
+- turn count if available
 - token usage if available
 - estimated cost if available
 - tool call count if available
@@ -180,130 +171,192 @@ This is needed because agent performance is stochastic.
 
 ---
 
-## P1 Features (Should Have)
+## P1 Features (Resume-Strengthening Features)
 
-P1 adds evaluation depth and practical usability.
+P1 should transform this from a runnable prototype into a credible evaluation framework.
 
-### P1.1 Stability metrics
-Compute multi-run metrics such as:
+### P1.1 Scenario-driven task dataset
+Support a structured dataset of coding scenarios with metadata such as:
 
-- success rate
-- mean duration
-- mean token usage
-- variance / standard deviation
-- cost distribution
+- task category
+- difficulty tier
+- expected tool usage profile
+- required repo context depth
+- validator type
 
-### P1.2 Richer trace model
-Add support for normalized events such as:
+The system should support at least 10 to 20 representative coding scenarios, not just toy tasks.
 
-- command execution
-- diff summary
-- retry loops
-- dead-end patterns
-- validation attempts
-- error recovery behavior
+### P1.2 Failure taxonomy
+Implement structured failure-mode classification for unsuccessful or degraded runs.
 
-### P1.3 Trace-derived metrics
-Add metrics such as:
+Examples:
 
-- retries before success
-- number of validation cycles
+- timeout
+- invalid edit target
+- incomplete implementation
+- failed validation ignored
+- excessive retry loop
+- tool misuse
+- hallucinated command or API
+- partial completion
+
+Failure analysis must be stored as structured data, not only free-text notes.
+
+### P1.3 Step-derived metrics
+Compute metrics derived from trace behavior, such as:
+
+- retry count
+- number of validation attempts
 - number of file modifications
 - command count
-- ratio of productive vs failed tool actions
+- failed tool-action count
+- dead-end step count
+- edit-to-validation ratio
 
-### P1.4 Dataset management
-Support a structured task dataset organization for coding tasks.
+These should be reported separately from outcome metrics.
 
-Include:
+### P1.4 Richer trace normalization
+Improve trace capture and normalization to distinguish between:
 
-- task metadata
-- difficulty tags
-- category tags
-- repo snapshot or setup script
-- validator configuration
+- raw backend trace
+- normalized event trace
+- derived behavioral metrics
 
-### P1.5 Aggregated summaries
-Generate aggregate views by:
+The system must not treat missing telemetry as zero.
+Unavailable fields must be marked explicitly as unavailable.
+
+### P1.5 Aggregate reporting
+Generate aggregate comparison reports by:
 
 - agent
 - task category
 - difficulty tier
-- repo type
+- run index
+- repeated-run summary
 
-### P1.6 Better reporting outputs
-Support machine-readable and human-readable output:
+Reports should surface patterns, not only per-run details.
 
-- JSON
-- Markdown
-- CSV
+### P1.6 Architecture comparison support
+Support comparison between at least:
 
-### P1.7 Configurable evaluation policy
-Support configurable timeouts, retry limits, and cost ceilings per run.
+- one productized coding agent
+- one custom orchestrated agent implementation
 
-### P1.8 Partial credit model
-For tasks where binary success is too coarse, allow structured partial scoring.
-This must still be explicit and deterministic where possible.
+A LangGraph-based coding agent is a valid P1 target for architecture-level comparison.
+
+The project should explicitly compare:
+
+- reliability
+- observability
+- trace richness
+- recovery behavior
+- cost-efficiency
+
+### P1.7 Reproducible scoring rubric
+Define an explicit scoring rubric for coding tasks that separates:
+
+- objective correctness
+- efficiency
+- trace quality
+- failure severity
+
+The rubric must be reproducible and inspectable.
+
+### P1.8 Batch execution workflow
+Support batch execution of scenario suites across multiple agents and multiple runs.
+
+Example:
+
+- 10 tasks
+- 3 runs per task
+- 3 agent backends
+
+This should produce a consistent evaluation artifact set.
 
 ---
 
-## P2 Features (Nice to Have / Strategic)
+## P2 Features (Strategic / Platform-Oriented)
 
-P2 is where the system becomes platform-like, but only after P0 and P1 are solid.
+P2 extends the system into a more durable evaluation platform.
 
-### P2.1 Workload expansion
-Add additional workload types, such as:
+### P2.1 Historical run storage
+Persist runs, trace summaries, metrics, and validation outcomes in a database-backed store.
 
-- RAG QA
-- browser agent tasks
-- API workflow tasks
+The first database target should be simple and pragmatic, such as:
 
-This should extend the shared core, not distort it.
+- SQLite for local development
+- Postgres for future scaling
 
-### P2.2 Judge-assisted evaluation
-Use model-based judges only for dimensions that are difficult to validate deterministically, such as:
+The storage layer should support:
+
+- querying by task
+- querying by agent
+- querying by time range
+- querying by outcome or failure type
+
+### P2.2 Regression detection
+Implement historical comparison workflows that identify regressions in:
+
+- success rate
+- latency
+- token usage
+- cost
+- failure distribution
+- trace-derived metrics
+- tool selection behavior
+
+The system should support before/after comparisons across agent versions or workflow revisions.
+
+### P2.3 Versioned agent and task metadata
+Store versioned metadata for:
+
+- agent backend version
+- prompt or policy version
+- tool configuration
+- task version
+- validator version
+
+This is required for trustworthy regression analysis.
+
+### P2.4 Database-backed analytics layer
+Add an analytics layer over stored runs for:
+
+- aggregate summaries
+- trend analysis
+- failure clustering
+- agent-vs-agent comparisons over time
+
+### P2.5 Support for custom orchestrated architectures
+Expand support for additional orchestrated agents beyond LangGraph, including:
+
+- MCP-compatible tool integrations
+- planner/executor split agents
+- critic/retry loop architectures
+
+### P2.6 Optional judge-assisted evaluation
+Introduce model-based judges only for dimensions that are hard to validate deterministically, such as:
 
 - code quality
 - explanation quality
-- groundedness for non-coding tasks
+- maintainability heuristics
 
-Judge output must be clearly labeled as judge-based, not objective truth.
+Judge-based scoring must always be labeled separately from objective scoring.
 
-### P2.3 Cost-performance frontier analysis
-Compare agents not just by raw success, but by:
+### P2.7 Visualization and dashboard layer
+Once schemas stabilize, provide a lightweight dashboard or report viewer for exploring:
 
-- success per dollar
-- success per minute
-- stability-adjusted efficiency
+- run history
+- aggregate comparisons
+- regression trends
+- failure-mode breakdowns
 
-### P2.4 Historical tracking
-Store historical run results to support:
-
-- regression detection
-- version-to-version comparison
-- trend analysis over time
-
-### P2.5 Visualization layer
-Build charts for:
-
-- success distributions
-- token / cost scatter
-- per-task breakdown
-- efficiency frontiers
-
-### P2.6 Multi-agent orchestration evaluation
-Evaluate orchestrated agent systems, not just single agents.
-
-### P2.7 External leaderboard or publishable benchmark
-Only after the methodology is stable and credible.
+Dashboard work must come after the core data model and storage model stabilize.
 
 ---
 
 ## High-Level Design
 
 ### 1. Core Concepts
-
-The system should define the following core concepts:
 
 #### Task
 A unit of work to be solved by an agent.
@@ -336,9 +389,10 @@ A run should contain:
 - run metadata
 - raw trace
 - normalized trace
+- derived metrics
 - artifacts
-- metrics
 - validation result
+- failure classification
 
 #### Evaluator
 Computes scores and metrics from run outputs.
@@ -346,10 +400,14 @@ Computes scores and metrics from run outputs.
 There should be:
 
 - objective evaluators
+- trace-derived evaluators
 - optional judge-assisted evaluators later
 
 #### Report
-Aggregates results into side-by-side comparisons.
+Aggregates results into side-by-side comparisons and repeated-run summaries.
+
+#### Historical Store
+Persists run-level and aggregate metadata for regression detection and analytics.
 
 ---
 
@@ -366,6 +424,7 @@ Recommended architecture:
 
 - `agents/`
   - one adapter per agent backend
+  - one adapter for custom LangGraph agent runner
 
 - `workloads/`
   - coding task support first
@@ -373,6 +432,7 @@ Recommended architecture:
 
 - `evaluators/`
   - coding validators
+  - failure taxonomy classifier
   - trace metrics
   - aggregate evaluators
 
@@ -380,6 +440,10 @@ Recommended architecture:
   - task definitions
   - fixtures
   - setup assets
+
+- `storage/`
+  - file-based run storage initially
+  - database adapters later
 
 - `reports/`
   - markdown/json/csv output
@@ -399,15 +463,14 @@ This system evaluates externalized behavior:
 - timing
 - final outcome
 
-Trace quality matters, but trace comparability is approximate.
-
-That is acceptable.
-
-The system should explicitly distinguish between:
+The system must distinguish between:
 
 - raw backend trace
 - normalized trace
 - derived metrics
+- unavailable telemetry
+
+If two agents expose different telemetry granularity, compare them only on shared observable dimensions and label missing fields as unavailable, not zero.
 
 ---
 
@@ -419,14 +482,14 @@ The evaluation stack should prioritize:
 2. efficiency
 3. stability
 4. process quality
-
-The system should avoid subjective scoring unless unavoidable.
+5. failure explainability
 
 For coding tasks, the gold standard is:
 
 - deterministic validation
 - repeated runs
 - transparent metrics
+- structured failure analysis
 
 ---
 
@@ -435,58 +498,44 @@ For coding tasks, the gold standard is:
 When implementing this project, follow these constraints:
 
 - Keep the core workload-agnostic, but do not generalize prematurely
-- P0 must focus on coding tasks only
+- P0 and P1 must focus on coding tasks first
 - Avoid framework bloat
-- Avoid adding a database before needed
-- Prefer local files and structured JSON for early stages
-- Keep every run reproducible and inspectable
-- Make failure modes visible
+- Prefer explicit schemas over clever abstractions
+- Make every run reproducible and inspectable
 - Do not hide missing metrics behind fake normalization
-- If one agent exposes less telemetry, mark fields as unavailable instead of inventing equivalents
+- Prefer local file storage first, then introduce a database in P2
+- Database adoption must improve regression analysis, not just look more enterprise
 
 ---
 
-## Implementation Guidance for Claude
+## Suggested P1 Deliverable
 
-When working in this repository:
+A credible P1 milestone should include:
 
-- prioritize P0 completion before adding P1 or P2 ideas
-- make the vertical path work end-to-end
-- prefer explicit schemas over clever abstractions
-- keep adapters small and backend-specific
-- keep evaluators deterministic where possible
-- do not mix workload-specific logic into the shared core
-- do not add RAG abstractions until coding workflow evaluation is stable
-- do not optimize for elegance at the cost of observability
-
-When making architecture decisions:
-
-- prefer boring over fancy
-- prefer inspectable over magical
-- prefer measurable over aspirational
-
-When making frontend design and implementation:
-
-- use DESIGN.md at the project folder and light theme
-
----
-
-## Suggested P0 Deliverable
-
-The first credible milestone should be:
-
-- 2 coding agents
-- start coding agents with Claude Code and Codex
-- 5 to 10 coding tasks
-- isolated runs
-- deterministic validation
+- at least 2 to 3 agent backends
+- one of them being a custom LangGraph-based agent
+- 10 to 20 coding scenarios
 - repeated runs
-- side-by-side comparison report
+- deterministic validation
+- failure taxonomy
+- aggregate side-by-side reports
+- trace normalization rules
 
-This is the minimum version that can produce useful insight and serve as a public demo.
+---
+
+## Suggested P2 Deliverable
+
+A credible P2 milestone should include:
+
+- historical run storage in SQLite or Postgres
+- versioned metadata for agents and tasks
+- regression detection reports
+- trend analysis across repeated benchmarks
+- architecture-level comparison across native and orchestrated agents
 
 ---
 
 ## One-Line Product Definition
 
-This project is a side-by-side evaluation system for AI agents, designed to make task completion, cost, speed, and trace behavior measurable across agents solving the same work.
+This project is a side-by-side evaluation framework for AI agents, designed to measure correctness, efficiency, observability, and regression behavior across agent implementations and architectures.
+
