@@ -3,18 +3,23 @@ Codex agent adapter.
 
 Invokes:  codex exec --full-auto --json --skip-git-repo-check -C <workspace> "<prompt>"
 
---full-auto      non-interactive, workspace-write sandbox
---json           emit events as JSONL on stdout (structured trace)
+--full-auto            non-interactive, workspace-write sandbox
+--json                 emit events as JSONL on stdout (structured trace)
 --skip-git-repo-check  allow running outside a git repo
 
-JSONL event types we handle:
-  {"type": "AgentMessage", "role": "assistant", "content": [...]}
-  {"type": "ToolCallStart", "tool_name": "...", "args": {...}}
-  {"type": "ToolCallEnd", "tool_name": "...", "output": "..."}
-  {"type": "SessionConfigured", ...}
-  {"type": "Error", "message": "..."}
+JSONL event schema (verified against codex v0.118.0):
+  {"type": "thread.started", "thread_id": "..."}
+  {"type": "turn.started"}
+  {"type": "item.started",   "item": {"id": "...", "type": "<item_type>", ...}}
+  {"type": "item.completed", "item": {"id": "...", "type": "<item_type>", ...}}
+  {"type": "turn.completed", "usage": {"input_tokens": N, "cached_input_tokens": N, "output_tokens": N}}
 
-Token usage and cost are not available from the Codex CLI and remain None.
+item types:
+  agent_message      — text reasoning from the agent
+  command_execution  — shell command with aggregated_output and exit_code
+  file_change        — file edits with list of {path, kind}
+
+Cost is not exposed by the Codex CLI and remains None.
 """
 
 from __future__ import annotations
@@ -88,15 +93,7 @@ class CodexAdapter(AgentAdapter):
             )
 
         ended_at = datetime.now(timezone.utc)
-        trace = _parse_jsonl(stdout, stderr, started_at, ended_at, status)
-        metrics = Metrics(
-            wall_clock_seconds=(ended_at - started_at).total_seconds(),
-            tool_call_count=sum(
-                1 for e in trace.events
-                if e.kind == TraceEventKind.tool_call and e.tool_name
-            ),
-            # Token usage and cost not available from Codex CLI
-        )
+        trace, metrics = _parse_jsonl(stdout, stderr, started_at, ended_at, status)
 
         return Run(
             run_id=run_id,
@@ -118,10 +115,30 @@ def _parse_jsonl(
     started_at: datetime,
     ended_at: datetime,
     run_status: RunStatus,
-) -> Trace:
+) -> tuple[Trace, Metrics]:
+    """
+    Parse Codex exec --json JSONL output.
+
+    Actual event schema (verified against codex v0.118.0):
+      {"type": "thread.started", "thread_id": "..."}
+      {"type": "turn.started"}
+      {"type": "item.started",   "item": {"id": "...", "type": "<item_type>", ...}}
+      {"type": "item.completed", "item": {"id": "...", "type": "<item_type>", ...}}
+      {"type": "turn.completed", "usage": {"input_tokens": N, "cached_input_tokens": N, "output_tokens": N}}
+
+    item types:
+      agent_message      — text from the agent
+      command_execution  — shell command with aggregated_output and exit_code
+      file_change        — file edits with list of {path, kind}
+    """
     events: list[TraceEvent] = [
         TraceEvent(ts=started_at, kind=TraceEventKind.run_start),
     ]
+
+    turn_count = 0
+    total_input_tokens = 0
+    total_output_tokens = 0
+    command_count = 0
 
     for line in stdout.splitlines():
         line = line.strip()
@@ -130,58 +147,61 @@ def _parse_jsonl(
         try:
             obj = json.loads(line)
         except json.JSONDecodeError:
-            # Plain text line — capture as message
-            events.append(TraceEvent(
-                ts=ended_at,
-                kind=TraceEventKind.message,
-                role="assistant",
-                content=line,
-            ))
             continue
 
         etype = obj.get("type", "")
 
-        if etype == "AgentMessage":
-            content_blocks = obj.get("content", [])
-            text = " ".join(
-                b.get("text", "") for b in content_blocks if b.get("type") == "text"
-            ) if isinstance(content_blocks, list) else str(content_blocks)
-            if text.strip():
+        if etype == "turn.started":
+            turn_count += 1
+
+        elif etype == "turn.completed":
+            usage = obj.get("usage", {})
+            total_input_tokens += usage.get("input_tokens", 0)
+            total_output_tokens += usage.get("output_tokens", 0)
+
+        elif etype == "item.completed":
+            item = obj.get("item", {})
+            itype = item.get("type", "")
+
+            if itype == "agent_message":
+                text = item.get("text", "").strip()
+                if text:
+                    events.append(TraceEvent(
+                        ts=ended_at,
+                        kind=TraceEventKind.message,
+                        role="assistant",
+                        content=text,
+                        raw=item,
+                    ))
+
+            elif itype == "command_execution":
+                command_count += 1
                 events.append(TraceEvent(
                     ts=ended_at,
-                    kind=TraceEventKind.message,
-                    role="assistant",
-                    content=text,
-                    raw=obj,
+                    kind=TraceEventKind.command,
+                    command=item.get("command"),
+                    tool_output=item.get("aggregated_output"),
+                    exit_code=item.get("exit_code"),
+                    raw=item,
                 ))
 
-        elif etype in ("ToolCallStart", "ToolCall"):
-            events.append(TraceEvent(
-                ts=ended_at,
-                kind=TraceEventKind.tool_call,
-                tool_name=obj.get("tool_name") or obj.get("name"),
-                tool_input=obj.get("args") or obj.get("input"),
-                raw=obj,
-            ))
+            elif itype == "file_change":
+                for change in item.get("changes", []):
+                    events.append(TraceEvent(
+                        ts=ended_at,
+                        kind=TraceEventKind.file_edit,
+                        file_path=change.get("path"),
+                        content=change.get("kind"),  # "update" | "create" | "delete"
+                        raw=item,
+                    ))
 
-        elif etype == "ToolCallEnd":
-            events.append(TraceEvent(
-                ts=ended_at,
-                kind=TraceEventKind.tool_call,
-                tool_name=obj.get("tool_name"),
-                tool_output=str(obj.get("output", "")),
-                raw=obj,
-            ))
-
-        elif etype == "Error":
+        elif etype == "error":
             events.append(TraceEvent(
                 ts=ended_at,
                 kind=TraceEventKind.error,
                 content=obj.get("message") or str(obj),
                 raw=obj,
             ))
-
-        # SessionConfigured and other informational events are ignored
 
     if stderr.strip():
         events.append(TraceEvent(
@@ -196,4 +216,15 @@ def _parse_jsonl(
         content=run_status.value,
     ))
 
-    return Trace(raw_backend="codex", events=events)
+    total_tokens = total_input_tokens + total_output_tokens
+    metrics = Metrics(
+        wall_clock_seconds=(ended_at - started_at).total_seconds(),
+        turn_count=turn_count or None,
+        input_tokens=total_input_tokens or None,
+        output_tokens=total_output_tokens or None,
+        total_tokens=total_tokens or None,
+        estimated_cost_usd=None,   # not exposed by Codex CLI
+        tool_call_count=command_count or None,
+    )
+
+    return Trace(raw_backend="codex", events=events), metrics
