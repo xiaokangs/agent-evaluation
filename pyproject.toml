@@ -22,11 +22,11 @@ dev = [
 ]
 
 [project.scripts]
-agent-eval = "agent_eval.cli:app"
+agent-eval = "cli:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent_eval*"]
+include = ["cli", "core*", "agents*", "evaluators*", "workloads*", "datasets*"]
 
 [tool.ruff]
 line-length = 100
