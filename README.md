@@ -119,6 +119,57 @@ agent-eval/
 
 ---
 
+## Architecture
+
+```mermaid
+flowchart TD
+    CLI["cli.py (Typer)\nrun / batch / report"]
+
+    subgraph Core["core/"]
+        RM["RunManager\n(run_manager.py)"]
+        WS["isolated_workspace()\n(workspace.py)\ncopytree + setup_commands\nguaranteed cleanup"]
+        SCHEMAS["schemas.py\nTask · Trace · TraceEvent\nMetrics · Run · Report"]
+        REPORT["report.py\nbuild_report()\nwrite_markdown / write_json"]
+    end
+
+    subgraph Agents["agents/ (AgentAdapter ABC)"]
+        BASE["base.py\nagent_id, run()"]
+        CC["ClaudeCodeAdapter\nspawns `claude --output-format stream-json`\nparses NDJSON -> Trace/Metrics"]
+        CX["CodexAdapter\nspawns `codex exec --json`\nparses JSONL -> Trace/Metrics"]
+        LG["LangGraphAdapter\n(STUB) raises NotImplementedError"]
+    end
+
+    subgraph Evaluators["evaluators/"]
+        EBASE["Evaluator ABC\n(base.py)"]
+        CE["CodingEvaluator\n(coding.py)\ntests_pass · output_match\nfile_changed · script"]
+    end
+
+    DATASETS["datasets/\ntask JSON + fixtures/\n(solution.py + test_solution.py)"]
+    RESULTS["results/<batch>/*.json\n+ manifest.json\n(file-based run storage)"]
+
+    CLI -->|loads| DATASETS
+    CLI -->|"Task(**json)"| SCHEMAS
+    CLI --> RM
+    RM --> WS
+    WS -->|"isolated workspace path"| BASE
+    BASE --> CC
+    BASE --> CX
+    BASE --> LG
+    CC -->|"Run (trace, metrics)"| RM
+    CX -->|"Run (trace, metrics)"| RM
+    RM --> EBASE
+    EBASE --> CE
+    CE -->|"validation result"| RM
+    RM -->|"persist JSON"| RESULTS
+    RESULTS --> CLI
+    CLI -->|report command| REPORT
+    REPORT -->|"report.md / .json"| CLI
+```
+
+`langgraph` is wired into the adapter map but `run()` currently raises `NotImplementedError` — it's a P1 stub, not a working backend.
+
+---
+
 ## Adding a New Task
 
 1. **Create the fixture** under `datasets/fixtures/<task-id>/`:
