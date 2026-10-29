@@ -12,6 +12,6 @@ class Evaluator(ABC):
     @abstractmethod
     def evaluate(self, run: Run, task: Task) -> Run:
         """
-        Populate run.validation and refine run.metrics based on run artifacts.
-        Must return the (possibly modified) run.
+        Set run.validation based on the run's workspace/artifacts and return the run.
+        (Trace-derived metrics are not an evaluator responsibility yet — P1.)
         """

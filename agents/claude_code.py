@@ -4,12 +4,24 @@ Claude Code agent adapter.
 Invokes the `claude` CLI with --output-format stream-json so we get
 structured NDJSON events. Parses them into a normalized Trace.
 
-Stream-JSON event types we care about:
-  {"type": "assistant", "message": {...}}   — assistant turn with content blocks
-  {"type": "tool_use", ...}                 — tool call (inside message content)
-  {"type": "result", "subtype": "success"|"error",
-   "cost_usd": float, "duration_ms": int, "num_turns": int,
-   "total_input_tokens": int, "total_output_tokens": int, ...}
+Stream-JSON fields the parser actually reads (one JSON object per line):
+  {"type": "assistant", "message": {"content": [<block>, ...]}}
+      block {"type": "text", "text": ...}               -> message event
+      block {"type": "tool_use", "name": ..., "input": {...}} -> tool_call event
+      other block types (e.g. "thinking") are ignored
+  {"type": "tool_result", "content": ...}
+      -> tool_call event with only tool_output set (no tool_name, so it is
+         not counted in tool_call_count). Unverified against real output:
+         tool results may actually arrive inside "user" messages instead.
+  {"type": "result", "subtype": ..., "result": ...,
+   "total_cost_usd": float, "duration_ms": int, "num_turns": int,
+   "modelUsage": {<model>: {"inputTokens", "outputTokens",
+                            "cacheReadInputTokens", "cacheCreationInputTokens"}}}
+      -> metrics; subtype == "error" also adds an error event
+  {"type": "system", ...} and anything else is ignored.
+
+tool_call_count counts every tool_use block (all tool kinds), whereas the
+Codex adapter only counts command_execution items.
 """
 
 from __future__ import annotations
@@ -29,7 +41,7 @@ from core.schemas import (
     TraceEvent,
     TraceEventKind,
 )
-from agents.base import AgentAdapter
+from agents.base import AgentAdapter, _to_text
 
 # The claude CLI must be on PATH
 CLAUDE_BIN = "claude"
@@ -82,8 +94,11 @@ class ClaudeCodeAdapter(AgentAdapter):
             stderr = proc.stderr
             if proc.returncode != 0 and not raw_lines:
                 status = RunStatus.error
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as e:
             status = RunStatus.timeout
+            # Keep whatever the agent emitted before the timeout for debugging.
+            raw_lines = [l for l in _to_text(e.stdout).splitlines() if l.strip()]
+            stderr = _to_text(e.stderr)
         except FileNotFoundError:
             raise RuntimeError(
                 f"'{CLAUDE_BIN}' not found on PATH. Install Claude Code CLI first."
@@ -91,6 +106,12 @@ class ClaudeCodeAdapter(AgentAdapter):
 
         ended_at = datetime.now(timezone.utc)
         trace, metrics = _parse_stream_json(raw_lines, stderr, started_at, ended_at, status)
+        if status == RunStatus.timeout:
+            trace.events.insert(len(trace.events) - 1, TraceEvent(
+                ts=ended_at,
+                kind=TraceEventKind.timeout,
+                content=f"timed out after {timeout}s",
+            ))
 
         return Run(
             run_id=run_id,
@@ -181,17 +202,21 @@ def _parse_stream_json(
             # cacheCreationInputTokens. Use this for accurate totals.
             duration_ms = obj.get("duration_ms")
 
-            model_usage = obj.get("modelUsage", {})
-            # Sum across all models (almost always just one)
-            input_tokens = sum(v.get("inputTokens", 0) for v in model_usage.values()) or None
-            output_tokens = sum(v.get("outputTokens", 0) for v in model_usage.values()) or None
-            cache_read = sum(v.get("cacheReadInputTokens", 0) for v in model_usage.values())
-            cache_creation = sum(v.get("cacheCreationInputTokens", 0) for v in model_usage.values())
-
-            # Total = all tokens that entered context + generated tokens
-            total_tokens = (
-                (input_tokens or 0) + (output_tokens or 0) + cache_read + cache_creation
-            ) or None
+            model_usage = obj.get("modelUsage") or {}
+            input_tokens: int | None = None
+            output_tokens: int | None = None
+            total_tokens: int | None = None
+            if model_usage:
+                # Sum across all models (almost always just one). An observed 0
+                # stays 0; only a missing modelUsage means "unavailable".
+                input_tokens = sum(v.get("inputTokens", 0) for v in model_usage.values())
+                output_tokens = sum(v.get("outputTokens", 0) for v in model_usage.values())
+                cache_read = sum(v.get("cacheReadInputTokens", 0) for v in model_usage.values())
+                cache_creation = sum(
+                    v.get("cacheCreationInputTokens", 0) for v in model_usage.values()
+                )
+                # Total = all tokens that entered context + generated tokens
+                total_tokens = input_tokens + output_tokens + cache_read + cache_creation
             metrics = Metrics(
                 wall_clock_seconds=(duration_ms / 1000.0) if duration_ms is not None else
                     (ended_at - started_at).total_seconds(),

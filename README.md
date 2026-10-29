@@ -1,6 +1,6 @@
 # agent-eval
 
-Side-by-side evaluation system for AI coding agents. Runs the same coding tasks across multiple agents (Claude Code, Codex, LangGraph) and produces a structured comparison report.
+Side-by-side evaluation system for AI coding agents. Runs the same coding tasks across multiple agents (Claude Code, Codex, LangGraph) and produces a structured comparison report. P0 works end-to-end for Claude Code and Codex; the LangGraph adapter is still a stub.
 
 ---
 
@@ -24,6 +24,16 @@ source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
+```
+
+### Development / tests
+
+```bash
+# Dev dependencies (includes requirements.txt + pytest, ruff, mypy)
+.venv/bin/pip install -r requirements-dev.txt
+
+# Run the unit tests (offline — real agent CLIs are mocked / faked)
+.venv/bin/python -m pytest
 ```
 
 ---
@@ -90,6 +100,102 @@ python cli.py report \
 
 ---
 
+## Adding a New Task
+
+1. **Create the fixture** under `datasets/fixtures/<task-id>/`:
+   - `solution.py` — starting state (broken, incomplete, or stub)
+   - `test_solution.py` — pytest tests that must pass after the agent fixes it
+
+2. **Create the task JSON** at `datasets/tasks/<task-id>.json`:
+   ```json
+   {
+     "id": "your-task-id",
+     "description": "What you tell the agent — be specific and unambiguous",
+     "workspace": "datasets/fixtures/your-task-id",
+     "validator": {
+       "type": "tests_pass",
+       "config": { "command": "python -m pytest test_solution.py -v", "timeout_seconds": 30 }
+     },
+     "timeout_seconds": 120,
+     "metadata": { "difficulty": "easy", "category": "bug-fix", "language": "python" }
+   }
+   ```
+   `workspace` is a local directory path, relative to where you run `cli.py` (the repo root); it is copied in full for every run. Git URLs are not supported.
+
+3. **Verify the fixture fails before the agent touches it:**
+   ```bash
+   .venv/bin/python -m pytest datasets/fixtures/your-task-id/test_solution.py -q
+   # Must FAIL — if it passes, the task is trivially solved already
+   ```
+
+**Validator types:** `tests_pass` · `output_match` · `file_changed` · `script`
+
+---
+
+## Available Agents
+
+| Agent ID | Backend | Tokens | Cost |
+|----------|---------|--------|------|
+| `claude-code` | `claude --output-format stream-json` | ✅ | ✅ |
+| `codex` | `codex exec --full-auto --json` | ✅ | N/A |
+| `langgraph` | Custom LangGraph agent (P1 stub) | TBD | TBD |
+
+`Tools` in the report is not measured the same way across backends: Claude Code counts every `tool_use` block, Codex counts only `command_execution` items.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TD
+    CLI["cli.py (Typer)<br/>run / batch / report"]
+
+    subgraph Core["core/"]
+        RM["RunManager<br/>(run_manager.py)"]
+        WS["isolated_workspace()<br/>(workspace.py)<br/>copytree + setup_commands<br/>cleanup on exit"]
+        SCHEMAS["schemas.py<br/>Task · Trace · TraceEvent<br/>Metrics · Run · Report"]
+        REPORT["report.py<br/>build_report()<br/>write_markdown / write_json"]
+    end
+
+    subgraph Agents["agents/ (AgentAdapter ABC)"]
+        BASE["base.py<br/>agent_id, run()"]
+        CC["ClaudeCodeAdapter<br/>spawns `claude --output-format stream-json`<br/>parses NDJSON -> Trace/Metrics"]
+        CX["CodexAdapter<br/>spawns `codex exec --json`<br/>parses JSONL -> Trace/Metrics"]
+        LG["LangGraphAdapter<br/>(STUB) raises NotImplementedError"]
+    end
+
+    subgraph Evaluators["evaluators/"]
+        EBASE["Evaluator ABC<br/>(base.py)"]
+        CE["CodingEvaluator<br/>(coding.py)<br/>tests_pass · output_match<br/>file_changed · script"]
+    end
+
+    DATASETS["datasets/<br/>task JSON + fixtures/<br/>(solution.py + test_solution.py)"]
+    RESULTS["results/&lt;batch&gt;/*.json<br/>+ manifest.json<br/>(file-based run storage)"]
+
+    CLI -->|loads| DATASETS
+    CLI -->|"Task(**json)"| SCHEMAS
+    CLI --> RM
+    RM --> WS
+    WS -->|"isolated workspace path"| BASE
+    BASE --> CC
+    BASE --> CX
+    BASE --> LG
+    CC -->|"Run (trace, metrics)"| RM
+    CX -->|"Run (trace, metrics)"| RM
+    LG -.->|"NotImplementedError (stub)"| RM
+    RM --> EBASE
+    EBASE --> CE
+    CE -->|"validation result"| RM
+    RM -->|"persist JSON"| RESULTS
+    RESULTS --> CLI
+    CLI -->|report command| REPORT
+    REPORT -->|"report.md / .json"| CLI
+```
+
+`langgraph` is wired into the adapter map but `run()` currently raises `NotImplementedError` — it's a P1 stub, not a working backend. An adapter exception currently aborts the whole `run`/`batch` command.
+
+---
+
 ## Project Structure
 
 ```
@@ -111,6 +217,12 @@ agent-eval/
 ├── datasets/
 │   ├── tasks/                    # Task JSON definitions
 │   └── fixtures/                 # Per-task workspace snapshots (buggy code + tests)
+├── tests/                        # pytest unit tests (offline, fake adapters)
+├── pyproject.toml                # Package metadata + `agent-eval` console script
+├── requirements.txt              # Runtime dependencies
+├── requirements-dev.txt          # Dev/test dependencies (pytest, ruff, mypy)
+├── pytest.ini                    # pytest config
+├── report.md                     # Sample report (fix-off-by-one, 2 runs × 2 agents)
 └── results/                      # Run outputs (gitignored)
     └── batch_YYYYMMDD_HHMMSS/
         ├── manifest.json
@@ -119,92 +231,15 @@ agent-eval/
 
 ---
 
-## Architecture
+## Design Trade-offs
 
-```mermaid
-flowchart TD
-    CLI["cli.py (Typer)\nrun / batch / report"]
-
-    subgraph Core["core/"]
-        RM["RunManager\n(run_manager.py)"]
-        WS["isolated_workspace()\n(workspace.py)\ncopytree + setup_commands\nguaranteed cleanup"]
-        SCHEMAS["schemas.py\nTask · Trace · TraceEvent\nMetrics · Run · Report"]
-        REPORT["report.py\nbuild_report()\nwrite_markdown / write_json"]
-    end
-
-    subgraph Agents["agents/ (AgentAdapter ABC)"]
-        BASE["base.py\nagent_id, run()"]
-        CC["ClaudeCodeAdapter\nspawns `claude --output-format stream-json`\nparses NDJSON -> Trace/Metrics"]
-        CX["CodexAdapter\nspawns `codex exec --json`\nparses JSONL -> Trace/Metrics"]
-        LG["LangGraphAdapter\n(STUB) raises NotImplementedError"]
-    end
-
-    subgraph Evaluators["evaluators/"]
-        EBASE["Evaluator ABC\n(base.py)"]
-        CE["CodingEvaluator\n(coding.py)\ntests_pass · output_match\nfile_changed · script"]
-    end
-
-    DATASETS["datasets/\ntask JSON + fixtures/\n(solution.py + test_solution.py)"]
-    RESULTS["results/<batch>/*.json\n+ manifest.json\n(file-based run storage)"]
-
-    CLI -->|loads| DATASETS
-    CLI -->|"Task(**json)"| SCHEMAS
-    CLI --> RM
-    RM --> WS
-    WS -->|"isolated workspace path"| BASE
-    BASE --> CC
-    BASE --> CX
-    BASE --> LG
-    CC -->|"Run (trace, metrics)"| RM
-    CX -->|"Run (trace, metrics)"| RM
-    RM --> EBASE
-    EBASE --> CE
-    CE -->|"validation result"| RM
-    RM -->|"persist JSON"| RESULTS
-    RESULTS --> CLI
-    CLI -->|report command| REPORT
-    REPORT -->|"report.md / .json"| CLI
-```
-
-`langgraph` is wired into the adapter map but `run()` currently raises `NotImplementedError` — it's a P1 stub, not a working backend.
+- **Isolation by copying into a temp dir.** Each run gets a fresh `copytree` of the fixture, so runs cannot contaminate each other. Cheap and simple for small fixtures; gives up git-based checkouts and container-level isolation for now.
+- **Deterministic validators only.** Success is decided by tests / output / file checks, never by an LLM judge, so results are reproducible. Judge-based scoring is deferred (P2) and would be labeled separately.
+- **External CLIs, observable traces only.** Adapters wrap the real `claude` / `codex` CLIs and normalize their streamed events; no access to internal reasoning. Telemetry a backend doesn't expose stays `None` (shown as `N/A`), never 0.
+- **File-based storage.** One JSON per run plus a batch `manifest.json`; easy to inspect and diff. A database (SQLite/Postgres) is a P2 item for regression analysis.
 
 ---
 
-## Adding a New Task
+## Status
 
-1. **Create the fixture** under `datasets/fixtures/<task-id>/`:
-   - `solution.py` — starting state (broken, incomplete, or stub)
-   - `test_solution.py` — pytest tests that must pass after the agent fixes it
-
-2. **Create the task JSON** at `datasets/tasks/<task-id>.json`:
-   ```json
-   {
-     "id": "your-task-id",
-     "description": "What you tell the agent — be specific and unambiguous",
-     "workspace": "datasets/fixtures/your-task-id",
-     "validator": {
-       "type": "tests_pass",
-       "config": { "command": "python -m pytest test_solution.py -v", "timeout_seconds": 30 }
-     },
-     "timeout_seconds": 120,
-     "metadata": { "difficulty": "easy", "category": "bug-fix", "language": "python" }
-   }
-   ```
-
-3. **Verify the fixture fails before the agent touches it:**
-   ```bash
-   .venv/bin/python -m pytest datasets/fixtures/your-task-id/test_solution.py -q
-   # Must FAIL — if it passes, the task is trivially solved already
-   ```
-
-**Validator types:** `tests_pass` · `output_match` · `file_changed` · `script`
-
----
-
-## Available Agents
-
-| Agent ID | Backend | Tokens | Cost |
-|----------|---------|--------|------|
-| `claude-code` | `claude --output-format stream-json` | ✅ | ✅ |
-| `codex` | `codex exec --full-auto --json` | ✅ | N/A |
-| `langgraph` | Custom LangGraph agent (P1 stub) | TBD | TBD |
+P0 is done for Claude Code and Codex (isolation, adapters, traces, metrics, deterministic validation, repeated runs, side-by-side report). LangGraph is a stub; P1 items (failure taxonomy, trace-derived metrics, aggregate reports) are not started. See [CLAUDE.md](CLAUDE.md#current-status) for progress, next steps, and known pitfalls.

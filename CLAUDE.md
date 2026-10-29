@@ -1,5 +1,43 @@
 # CLAUDE.md
 
+How to run, architecture diagram, and directory layout live in [README.md](README.md); this file is the agent handoff (status, environment facts, pitfalls) plus the product spec below.
+
+## Current Status
+
+### Done (P0)
+
+- `core/`: schemas, `isolated_workspace` (temp-dir copy per run), `RunManager`, report (markdown/json).
+- `agents/`: `ClaudeCodeAdapter`, `CodexAdapter` working; `LangGraphAdapter` is a stub (`run()` raises `NotImplementedError`).
+- `evaluators/`: `CodingEvaluator` (tests_pass / output_match / file_changed / script) — sets `run.validation` only.
+- `datasets/`: 9 tasks + fixtures. `cli.py`: `run` / `batch` / `report`.
+- `tests/`: offline pytest suite (fake adapters, mocked subprocess).
+
+### Not built yet (planned)
+
+- Directories from "Recommended Layering" below that do not exist: `workloads/`, `storage/`, `reports/` (reporting lives in `core/report.py`, storage is plain JSON under `results/`).
+- P1: failure taxonomy, trace-derived metrics, aggregate reports, LangGraph agent.
+
+### Next steps / known gaps
+
+- `RunManager` does not catch adapter exceptions: selecting `langgraph`, a missing CLI, or a failed setup command aborts the whole batch and no `manifest.json` is written.
+- Run status is decided differently per adapter: Claude Code is `error` only when exit≠0 **and** stdout is empty (otherwise `success`, `result.subtype` ignored); Codex is `failure` whenever exit≠0. Unify after sampling real error output.
+- `tool_call_count` differs per backend: Claude counts all `tool_use` blocks, Codex only `command_execution`.
+- The Claude parser's top-level `tool_result` branch is unverified (results may come in `user` messages); tests use hand-written input.
+
+### Environment facts
+
+- Tests: `.venv/bin/pip install -r requirements-dev.txt && .venv/bin/python -m pytest`
+- Run `cli.py` from the repo root — task `workspace` paths are relative to it.
+- Codex JSONL event schema was verified against codex CLI v0.118.0 (see `agents/codex.py` docstring).
+
+### Pitfalls hit so far
+
+- Claude stream-json: `result.usage` only covers the last request's uncached tokens; use `result.modelUsage[*]` (inputTokens / outputTokens / cacheRead / cacheCreation) for session totals. Cost is `total_cost_usd`, not `cost_usd`.
+- Codex event names were initially guessed wrong; the parser was rewritten after sampling real output. Sample first, code second.
+- `TimeoutExpired.stdout` can be bytes even with `text=True`; adapters normalize it so partial output is kept in the trace.
+
+---
+
 ## Project: Agent Evaluation Side-by-Side Comparison
 
 ### Project Goal
@@ -413,7 +451,7 @@ Persists run-level and aggregate metadata for regression detection and analytics
 
 ### 2. Recommended Layering
 
-Recommended architecture:
+Recommended architecture (`workloads/`, `storage/`, `reports/` are planned and not created yet — see Current Status):
 
 - `core/`
   - shared schemas

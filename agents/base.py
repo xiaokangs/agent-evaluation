@@ -1,8 +1,10 @@
 """
 Abstract base class for agent adapters.
 
-Each concrete adapter is backend-specific. Adapters must NOT share state
-between runs. The run_manager creates a fresh adapter instance per run.
+Each concrete adapter is backend-specific. cli.py builds one adapter
+instance per agent and reuses it across all tasks and runs (RunManager does
+not create adapters), so adapters must NOT keep mutable state between
+run() calls.
 """
 
 from __future__ import annotations
@@ -10,6 +12,15 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from core.schemas import Run, Task
+
+
+def _to_text(data: str | bytes | None) -> str:
+    """Normalize TimeoutExpired.stdout/stderr, which may be bytes even with text=True."""
+    if data is None:
+        return ""
+    if isinstance(data, bytes):
+        return data.decode("utf-8", errors="replace")
+    return data
 
 
 class AgentAdapter(ABC):

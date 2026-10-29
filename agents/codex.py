@@ -20,6 +20,9 @@ item types:
   file_change        — file edits with list of {path, kind}
 
 Cost is not exposed by the Codex CLI and remains None.
+tool_call_count counts only command_execution items (Claude Code counts every
+tool_use block). If no JSON event is parsed at all, turn/token/tool counts are
+None (unavailable); otherwise observed zeros are reported as 0.
 """
 
 from __future__ import annotations
@@ -38,7 +41,7 @@ from core.schemas import (
     TraceEvent,
     TraceEventKind,
 )
-from agents.base import AgentAdapter
+from agents.base import AgentAdapter, _to_text
 
 CODEX_BIN = "codex"
 
@@ -85,8 +88,11 @@ class CodexAdapter(AgentAdapter):
             stderr = proc.stderr
             if proc.returncode != 0:
                 status = RunStatus.failure
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as e:
             status = RunStatus.timeout
+            # Keep whatever the agent emitted before the timeout for debugging.
+            stdout = _to_text(e.stdout)
+            stderr = _to_text(e.stderr)
         except FileNotFoundError:
             raise RuntimeError(
                 f"'{CODEX_BIN}' not found on PATH. Install the Codex CLI first."
@@ -94,6 +100,12 @@ class CodexAdapter(AgentAdapter):
 
         ended_at = datetime.now(timezone.utc)
         trace, metrics = _parse_jsonl(stdout, stderr, started_at, ended_at, status)
+        if status == RunStatus.timeout:
+            trace.events.insert(len(trace.events) - 1, TraceEvent(
+                ts=ended_at,
+                kind=TraceEventKind.timeout,
+                content=f"timed out after {timeout}s",
+            ))
 
         return Run(
             run_id=run_id,
@@ -116,25 +128,14 @@ def _parse_jsonl(
     ended_at: datetime,
     run_status: RunStatus,
 ) -> tuple[Trace, Metrics]:
-    """
-    Parse Codex exec --json JSONL output.
-
-    Actual event schema (verified against codex v0.118.0):
-      {"type": "thread.started", "thread_id": "..."}
-      {"type": "turn.started"}
-      {"type": "item.started",   "item": {"id": "...", "type": "<item_type>", ...}}
-      {"type": "item.completed", "item": {"id": "...", "type": "<item_type>", ...}}
-      {"type": "turn.completed", "usage": {"input_tokens": N, "cached_input_tokens": N, "output_tokens": N}}
-
-    item types:
-      agent_message      — text from the agent
-      command_execution  — shell command with aggregated_output and exit_code
-      file_change        — file edits with list of {path, kind}
-    """
+    """Parse Codex exec --json JSONL output (schema: see the module docstring)."""
     events: list[TraceEvent] = [
         TraceEvent(ts=started_at, kind=TraceEventKind.run_start),
     ]
 
+    # Counts are only meaningful if at least one JSON event was parsed; with no
+    # events at all, metrics are unavailable (None) rather than 0.
+    saw_event = False
     turn_count = 0
     total_input_tokens = 0
     total_output_tokens = 0
@@ -149,6 +150,7 @@ def _parse_jsonl(
         except json.JSONDecodeError:
             continue
 
+        saw_event = True
         etype = obj.get("type", "")
 
         if etype == "turn.started":
@@ -219,12 +221,12 @@ def _parse_jsonl(
     total_tokens = total_input_tokens + total_output_tokens
     metrics = Metrics(
         wall_clock_seconds=(ended_at - started_at).total_seconds(),
-        turn_count=turn_count or None,
-        input_tokens=total_input_tokens or None,
-        output_tokens=total_output_tokens or None,
-        total_tokens=total_tokens or None,
+        turn_count=turn_count if saw_event else None,
+        input_tokens=total_input_tokens if saw_event else None,
+        output_tokens=total_output_tokens if saw_event else None,
+        total_tokens=total_tokens if saw_event else None,
         estimated_cost_usd=None,   # not exposed by Codex CLI
-        tool_call_count=command_count or None,
+        tool_call_count=command_count if saw_event else None,
     )
 
     return Trace(raw_backend="codex", events=events), metrics

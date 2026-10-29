@@ -79,7 +79,7 @@ def write_markdown(report: Report, path: Path) -> None:
     lines += [
         f"**Agents:** {', '.join(f'`{a}`' for a in report.agent_ids)}",
         f"**Tasks:** {len(report.task_ids)}  |  "
-        f"**Total runs:** {meta.get('total_runs', len(report.summaries))}",
+        f"**Total runs:** {meta.get('total_runs', sum(len(s.runs) for s in report.summaries))}",
         "",
         "---",
         "",

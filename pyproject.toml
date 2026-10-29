@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-eval"
@@ -16,7 +16,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "pytest-asyncio>=0.23",
     "ruff>=0.4",
     "mypy>=1.10",
 ]
@@ -24,9 +23,12 @@ dev = [
 [project.scripts]
 agent-eval = "cli:app"
 
+[tool.setuptools]
+py-modules = ["cli"]
+
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cli", "core*", "agents*", "evaluators*", "workloads*", "datasets*"]
+include = ["core*", "agents*", "evaluators*", "datasets*"]
 
 [tool.ruff]
 line-length = 100

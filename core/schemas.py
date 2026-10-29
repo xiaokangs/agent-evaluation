@@ -34,7 +34,8 @@ class ValidatorConfig(BaseModel):
 class Task(BaseModel):
     id: str
     description: str
-    # Path to workspace to copy for isolation, or a git repo URL
+    # Fixture directory path, relative to the working directory (repo root);
+    # copied in full into a temp dir for each run. Git URLs are not supported.
     workspace: str
     validator: ValidatorConfig
     # Optional shell commands to run inside the workspace before the agent starts
