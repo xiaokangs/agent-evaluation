@@ -2,6 +2,8 @@
 
 How to run, architecture diagram, and directory layout live in [README.md](README.md); this file is the agent handoff (status, environment facts, pitfalls) plus the product spec below.
 
+Build history (how finished parts got done) lives in [docs/history.md](docs/history.md).
+
 ## Current Status
 
 ### Done (P0)
@@ -33,7 +35,7 @@ How to run, architecture diagram, and directory layout live in [README.md](READM
 ### Pitfalls hit so far
 
 - Claude stream-json: `result.usage` only covers the last request's uncached tokens; use `result.modelUsage[*]` (inputTokens / outputTokens / cacheRead / cacheCreation) for session totals. Cost is `total_cost_usd`, not `cost_usd`.
-- Codex event names were initially guessed wrong; the parser was rewritten after sampling real output. Sample first, code second.
+- Codex JSONL: don't guess event names when changing `agents/codex.py` — sample real `codex exec --json` output first.
 - `TimeoutExpired.stdout` can be bytes even with `text=True`; adapters normalize it so partial output is kept in the trace.
 
 ---
