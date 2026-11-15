@@ -21,7 +21,8 @@ Build history (how finished parts got done) lives in [docs/history.md](docs/hist
 
 ### Next steps / known gaps
 
-- `RunManager` does not catch adapter exceptions: selecting `langgraph`, a missing CLI, or a failed setup command aborts the whole batch and no `manifest.json` is written.
+- A single failing run aborts the whole batch without `manifest.json` — see [docs/feature-request.md](docs/feature-request.md#preserve-batch-state-and-resume-after-individual-execution-failures).
+- Open feature requests (grading isolation, validator fixes, provenance, diagnostics, larger suite) live in [docs/feature-request.md](docs/feature-request.md).
 - Run status is decided differently per adapter: Claude Code is `error` only when exit≠0 **and** stdout is empty (otherwise `success`, `result.subtype` ignored); Codex is `failure` whenever exit≠0. Unify after sampling real error output.
 - `tool_call_count` differs per backend: Claude counts all `tool_use` blocks, Codex only `command_execution`.
 - The Claude parser's top-level `tool_result` branch is unverified (results may come in `user` messages); tests use hand-written input.

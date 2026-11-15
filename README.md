@@ -218,6 +218,7 @@ agent-eval/
 │   ├── tasks/                    # Task JSON definitions
 │   └── fixtures/                 # Per-task workspace snapshots (buggy code + tests)
 ├── tests/                        # pytest unit tests (offline, fake adapters)
+├── docs/                         # history.md build log, feature-request.md open requests
 ├── pyproject.toml                # Package metadata + `agent-eval` console script
 ├── requirements.txt              # Runtime dependencies
 ├── requirements-dev.txt          # Dev/test dependencies (pytest, ruff, mypy)
@@ -242,4 +243,4 @@ agent-eval/
 
 ## Status
 
-P0 is done for Claude Code and Codex (isolation, adapters, traces, metrics, deterministic validation, repeated runs, side-by-side report). LangGraph is a stub; P1 items (failure taxonomy, trace-derived metrics, aggregate reports) are not started. See [CLAUDE.md](CLAUDE.md#current-status) for progress, next steps, and known pitfalls.
+P0 is done for Claude Code and Codex (isolation, adapters, traces, metrics, deterministic validation, repeated runs, side-by-side report). LangGraph is a stub; P1 items (failure taxonomy, trace-derived metrics, aggregate reports) are not started. See [CLAUDE.md](CLAUDE.md#current-status) for progress, next steps, and known pitfalls; open feature requests are in [docs/feature-request.md](docs/feature-request.md), build history in [docs/history.md](docs/history.md).

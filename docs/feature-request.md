@@ -2,6 +2,8 @@
 
 Improvements proposed by fleet's product review and approved on the dashboard. Newest last; delete or mark them when done.
 
+Evidence files named below (`.fleet-product/...`) were captured by the fleet product review and are **not committed to this repo**; each entry states the reproduction steps inline so it can be checked without them.
+
 ## Grade submitted code against pristine tests outside the agent workspace
 
 - Date: 2026-11-14 · Type: Bug · Priority: P0 · Source: fleet product review
@@ -10,7 +12,7 @@ Improvements proposed by fleet's product review and approved on the dashboard. N
 
 **Proposal**: Separate editable inputs from grading assets. Verify declared output files in a fresh grading environment containing pristine tests and runner configuration; exclude agent-written test configuration and hooks. Record grading-file hashes and flag prohibited modifications. Acceptance check: the reproduced test-replacement attempt must fail while a genuine solution passes.
 
-**Evidence**: The offline tampering run left solution.py broken, replaced its tests, and received PASS; see .fleet-product/tampered-tests.txt and validator-probes.json. core/workspace.py copies tests into the editable workspace, and evaluators/coding.py runs them there. [Harbor documents separate verification](https://docs.harborframework.com/tasks/separate-verifier).
+**Evidence**: The offline tampering run left solution.py broken, replaced its tests, and received PASS (reproduce: in a workspace for any `tests_pass` task, leave `solution.py` unfixed and overwrite `test_solution.py` with `def test_ok(): assert True`, then run the validator); see .fleet-product/tampered-tests.txt and validator-probes.json. core/workspace.py copies tests into the editable workspace, and evaluators/coding.py runs them there. [Harbor documents separate verification](https://docs.harborframework.com/tasks/separate-verifier).
 
 ## Make validators enforce command success and actual file changes
 
@@ -31,7 +33,7 @@ Improvements proposed by fleet's product review and approved on the dashboard. N
 
 **Proposal**: Preflight selected backends and reject unimplemented adapters before starting. Write the planned run matrix to a manifest immediately, update it atomically after every attempt, and persist structured errors with execution phase and diagnostics. Catch adapter, setup, and validation failures per run; bound setup duration. Add resume support that skips completed attempts and explicitly selects failed attempts for retry.
 
-**Evidence**: .fleet-product/interrupted-batch.txt and batches/offline-interrupted/ show one saved result without manifest.json. missing-cli.txt shows an uncaught RuntimeError; validator-timeout.txt records TimeoutExpired. Relevant paths: cli.py, core/run_manager.py, core/workspace.py. [Inspect preserves completed samples for retries](https://inspect.aisi.org.uk/handling-errors.html).
+**Evidence**: .fleet-product/interrupted-batch.txt and batches/offline-interrupted/ (a custom output location: `python cli.py batch --agents <working-agent>,langgraph --output-dir batches --batch-id offline-interrupted`; the default would be results/batch_<timestamp>/) show one saved result without manifest.json. missing-cli.txt (an agent whose CLI is not on PATH) shows an uncaught RuntimeError; validator-timeout.txt records TimeoutExpired. Relevant paths: cli.py, core/run_manager.py, core/workspace.py. [Inspect preserves completed samples for retries](https://inspect.aisi.org.uk/handling-errors.html).
 
 
 ## Expose experiment configuration and save enough provenance to reproduce it
@@ -53,7 +55,7 @@ Improvements proposed by fleet's product review and approved on the dashboard. N
 
 **Proposal**: Before cleanup, save a bounded patch, raw backend output, and complete validator stdout/stderr under each run ID. Add report links to these artifacts and show execution status separately from validation outcome. Provide a local `inspect <run-id>` command that displays the failing test, patch, and relevant trace events.
 
-**Evidence**: .fleet-product/batch-report.md shows generic failure reasons. Tampering-run artifacts are empty and its workspace was deleted. core/report.py truncates failure reasons; core/run_manager.py saves no patch before workspace cleanup. [Harbor collects per-trial artifacts](https://docs.harborframework.com/jobs/artifact-collection).
+**Evidence**: .fleet-product/batch-report.md (output of `python cli.py report --input-dir <batch-dir>`) shows generic failure reasons. Tampering-run artifacts are empty and its workspace was deleted. core/report.py truncates failure reasons; core/run_manager.py saves no patch before workspace cleanup. [Harbor collects per-trial artifacts](https://docs.harborframework.com/jobs/artifact-collection).
 
 
 ## Add a representative multi-file evaluation suite with uncertainty reporting
